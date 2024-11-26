@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
-# Script to inflate HUTER data (zipped subfolders) to TMP,
-# read the matrix in,
-# preproc,
-# concat,
-# write to h5ad format.
+# Script to read in the data table from
+# https://petropoulos-lanner-labs.clintec.ki.se/dataset.download.html
+# read the table in,
+# get the links
+# download them
+# join and format attributes
+# write to loom and/or anndata
 
 # %% SETUP
 import gzip as gz
