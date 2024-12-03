@@ -22,6 +22,7 @@ from pathlib import Path
 from os import getenv
 from dotenv import load_dotenv
 from functools import reduce
+from multiprocessing import Pool
 
 load_dotenv()
 
@@ -125,11 +126,13 @@ def dl_gz(input_url, out_path, overwrite=False):
 
 # load and join them all into a table with multiprocessing
 # or do it linearly bc there seems to be some issue with multitasking 
-file_list = []
-for url in html_table.counts_url.to_list():
-    file_list.append(dl_gz(url, Path(data_folder)))  
+with Pool(processes=4) as pool:
+  file_list = pool.starmap(
+    dl_gz,
+    [(url, Path(raw_folder))
+      for url in html_table.counts_url.to_list()]
+  )
 html_table["local_file_loc"] = file_list
-
 
 
 # %% format phenotype per cell id
