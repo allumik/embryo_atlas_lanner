@@ -182,7 +182,7 @@ weird_data = [
 whole_rna_data = [ # dts with whole transcriptome genesets
   "GSE109555", "GSE191286"
 ]
-probe_id_data = [ # other datasets that have probe id's
+probe_id_data = [ # other datasets that have foreign id's
   "GSE36552","E-MTAB-3929","GSE136447",
   "E-MTAB-9388","PRJEB30442", "GSE66507",
   "E-MTAB-8060","GSE150578","GSE156596",
@@ -212,10 +212,11 @@ gene_ids = np.unique(np.concatenate([
 # theres a mixture of id's, so merge for every id type separately
 gene_ids = pd.merge(
   pd.DataFrame(index=pd.Index(gene_ids, name="Gene")),
-  annot, 
+  annot,
   how="left", left_index=True, right_index=True
 )
-# # now add from another set of ids for GENCODE IDs
+
+# now add from another set of ids for GENCODE IDs
 # gene_ids = pd.merge(
   # gene_ids,
   # annot.loc[~np.isin(annot.index, annot.hgnc_symbol)], 
@@ -250,16 +251,22 @@ for f_path in html_table.local_file_loc:
 
 print("Combining and writing out the raw dataset:")
 lm.combine(
-  loom_files, 
-  Path(data_folder).expanduser() / "embryo_lanner_comb_raw.loom", 
-  key="Gene"
+  loom_files,
+  Path(data_folder).expanduser() / "embryo_lanner_comb_raw.loom"
+  # key="Gene" # dont need it as everything is aligned already. also breaks for some reason
 )
-# now remove the loom files to save up on space :)
+# now remove the intermediate loom files to save up on space :)
 for f_path in loom_files: os.remove(f_path)
 
 # testing grounds
 # glimpse_loom(loom_files[2])
 # import anndata as an
 # an.read_loom(Path(data_folder) / "embryo_rnaseq_raw.loom")
+# genes_ = []
+# for f_path in loom_files:
+  # # glimpse_loom(f_path)
+  # with lm.connect(f_path) as loom_f:
+    # print("attrs:", np.unique(loom_f.ra["Gene"], return_counts=True))
+
 
 # %%
