@@ -258,10 +258,14 @@ lm.combine(
 # now remove the intermediate loom files to save up on space :)
 for f_path in loom_files: os.remove(f_path)
 
-# testing grounds
+# %% testing grounds
 # glimpse_loom(loom_files[2])
+glimpse_loom(Path(data_folder) / "embryo_lanner_comb_raw.loom")
 # import anndata as an
-# an.read_loom(Path(data_folder) / "embryo_rnaseq_raw.loom")
+# sc_dat = an.read_loom(Path(data_folder) / "embryo_lanner_comb_raw.loom")
+# print(sc_dat)
+# sc_dat.write_h5ad(Path(data_folder) / "embryo_lanner_comb_raw.h5ad")
+
 # genes_ = []
 # for f_path in loom_files:
   # # glimpse_loom(f_path)
