@@ -26,11 +26,11 @@ from multiprocessing import Pool
 
 load_dotenv()
 
-data_folder = getenv("DATA_FOLDER")
-raw_folder = getenv("RAW_DATA_FOLDER")
+data_folder = Path(getenv("DATA_FOLDER")).expanduser()
+raw_folder = Path(getenv("RAW_DATA_FOLDER")).expanduser()
 
 ## ensure that the working data directory is created
-Path(data_folder).expanduser().mkdir(exist_ok=True)
+data_folder.mkdir(exist_ok=True)
 
 def replace_non_ascii(s, replacement='*'):
   if isinstance(s, str):
@@ -47,11 +47,12 @@ def glimpse_loom(loom_path) -> None:
     print("rows:", list(loom_f.ra))
 
 
+
 # %% get ensemble attributes for id conversion
 ens_attributes = ["ensembl_gene_id","ensembl_gene_id_version","external_gene_name","external_gene_source","external_synonym","gene_biotype","arrayexpress","genecards","hgnc_symbol","mirbase_id","entrezgene_id","refseq_mrna","description","start_position","end_position","chromosome_name"]
 
 # download the annotation
-annot_f = Path(raw_folder) / "annot.parquet"
+annot_f = data_folder / "annot.parquet"
 if annot_f.exists():
   annot = pd.read_parquet(annot_f)
 else:
@@ -83,15 +84,15 @@ annot = (
 # %% get the table from the website https://petropoulos-lanner-labs.clintec.ki.se/dataset.download.html
 print("Downloading the table from the website")
 url_cols = ["metadata", "counts"]
-html_table = pd.merge( # read it two times, one with links and other without -> easier to format :)
+html_table = pd.merge( # read it two times, one with links and other without -> easier to format with `pd.read_html`:)
   left = pd.read_html(
     "https://petropoulos-lanner-labs.clintec.ki.se/dataset.download.html",
     extract_links=None
-  )[0].drop(columns=url_cols),
+  )[0].drop(columns=url_cols), # without the links
   right = pd.read_html(
     "https://petropoulos-lanner-labs.clintec.ki.se/dataset.download.html",
     extract_links="body"
-  )[0][url_cols],
+  )[0][url_cols], # with the links, but `extract_links="body"`
   left_index=True, right_index=True
 )
 
@@ -99,6 +100,15 @@ html_table = pd.merge( # read it two times, one with links and other without -> 
 for col in url_cols:
   html_table[[col, col + "_url"]] = pd.DataFrame(html_table[col].to_list(), index=html_table.index)
   html_table[col + "_url"] = "https://petropoulos-lanner-labs.clintec.ki.se/" + html_table[col + "_url"].astype(str)
+
+# update the "This project" field with new information
+html_table.loc[26, "Publication"] = "Lanner et al., 2024"
+html_table.loc[26, "Title"] = "A comprehensive human embryo reference tool using single-cell RNA-sequencing data"
+html_table.loc[26, "PubMed"] = 39543283
+html_table.loc[26, "Accession number"] = "GSE254641"
+# separate Ai et al into two
+html_table.loc[32, "Publication"] = "Ai et al., 2023 - embryo"
+html_table.loc[33, "Publication"] = "Ai et al., 2023 - assembloid"
 
 
 
@@ -129,10 +139,25 @@ def dl_gz(input_url, out_path, overwrite=False):
 with Pool(processes=4) as pool:
   file_list = pool.starmap(
     dl_gz,
-    [(url, Path(raw_folder))
+    [(url, raw_folder)
       for url in html_table.counts_url.to_list()]
   )
-html_table["local_file_loc"] = file_list
+html_table["local_file_loc"] = file_list # assume the dl order was the same
+
+
+# %% Now add the modified suppl. table 9
+# first read it in
+suppl_datasets = pd.read_csv(data_folder / "41592_2024_2493_MOESM11_ESM_modified.csv")
+
+# and join with the existing data table from the dataset website
+html_table = pd.merge(
+  left = html_table,
+  right = suppl_datasets.drop(columns=["PubMed"]),
+  how = "left",
+  left_on = ["Accession number", "Publication"],
+  right_on = ["GEO", "Data source"]
+)
+
 
 
 # %% format phenotype per cell id
@@ -147,7 +172,7 @@ comb_cid = pd.concat([
     for _, row in html_table.iterrows()
 ], ignore_index=True).set_index("cell").infer_objects()
 
-# get the pheno files for cells
+# get the pheno data for cells
 comb_pheno = reduce(
   lambda l,r: pd.merge(l, r, how="outer"), [
     pd.read_table(StringIO(requests.get(meta_url).text))
@@ -158,7 +183,7 @@ comb_pheno = reduce(
 # join the cell id with cell information
 comb_pheno = (
   pd.merge(comb_cid, comb_pheno, how="left", on="cell")
-  .replace("<NA>", np.NaN)
+  .replace("<NA>", np.nan)
   .infer_objects()
   .reset_index()
   .rename(columns={"cell":"CellID"})
@@ -166,39 +191,6 @@ comb_pheno = (
   .map(replace_non_ascii)
 )
 del comb_cid
-
-
-
-# %% some dataset filtering for downstream tasks
-
-# annotate datasets that are weird or do not fit our expectations
-weird_data = [
-  "GSE44183", # has floating point values and "genes" named "1-Dec" etc, otherwise seems to be whole-rna
-  "CNP0001454", # functional RNA / mirna profiles
-  "GSE247111", # weird "genes" named "selection_*" in the end
-  "GSE196365", # LINC genes in the list
-  "PRJCA017779" # the Assembloid study with LINC genes in the list
-]
-whole_rna_data = [ # dts with whole transcriptome genesets
-  "GSE109555", "GSE191286"
-]
-probe_id_data = [ # other datasets that have foreign id's
-  "GSE36552","E-MTAB-3929","GSE136447",
-  "E-MTAB-9388","PRJEB30442", "GSE66507",
-  "E-MTAB-8060","GSE150578","GSE156596",
-  "GSE177689","GSE158971","GSE178326"
-  "GSE210962","GSE226794","GSE218314",
-  "GSE208195","GSE232861","GSE239932",
-  "GSE166422","E-MTAB-10018","GSE167924",
-  "GSE182791","This project(GSE254641)",
-  "E-MTAB-10581","GSE134571","GSE171820",
-  "PRJCA017779"
-]
-# filter out those datasets with those weird data things
-html_table = html_table[
-  ~html_table["Accession number"]
-  .isin(weird_data) # + whole_rna_data
-  ].reset_index(drop=True)
 
 
 
@@ -216,61 +208,84 @@ gene_ids = pd.merge(
   how="left", left_index=True, right_index=True
 )
 
-# now add from another set of ids for GENCODE IDs
-# gene_ids = pd.merge(
-  # gene_ids,
-  # annot.loc[~np.isin(annot.index, annot.hgnc_symbol)], 
-  # how="left", left_index=True, right_on="hgnc_symbol"
-# )
 
 
 # %% load parquet files and add them to the loom file iteratively 
-# more memory efficient than combining parquets into a large matrix and saving it in one go
-# like a lot more efficient
 
-print("Starting to write into the loom files")
-loom_files=[]
-for f_path in html_table.local_file_loc: 
-  print("Writing loom from file:", f_path)
-  count_df = pd.read_parquet(f_path).convert_dtypes()
-  loom_f = str(Path(data_folder) / (Path(f_path.stem).stem + ".loom"))
-  lm.create(
-    filename=loom_f,
-    layers=(
-      count_df
-      [~count_df.index.duplicated(keep="first")] # some Gene id's seem to be duplicated
-      .reindex(gene_ids.index) # realign the data matrix to gene_ids
-      .to_numpy(dtype=np.integer, na_value=0)
-    ),
-    row_attrs=gene_ids.reset_index().to_dict("list"),
-    col_attrs=comb_pheno.loc[count_df.columns].reset_index().to_dict("list")
+# this is more memory efficient than combining parquets into a large matrix and saving it in one go
+# ... like a lot more RAM efficient
+def format_and_loom(file_list, gene_ids, phenotype, output_file, data_output=Path("./data/")) -> str:
+  loom_files=[]
+  for f_path in file_list: 
+    count_df = pd.read_parquet(f_path).convert_dtypes()
+    loom_f = str(data_folder / (Path(f_path.stem).stem + ".loom"))
+    lm.create(
+      filename=loom_f,
+      layers=(
+        count_df
+        [~count_df.index.duplicated(keep="first")] # some Gene id's seem to be duplicated
+        .reindex(gene_ids.index) # realign the data matrix to gene_ids
+        .to_numpy(dtype=np.integer, na_value=0)
+      ),
+      row_attrs=gene_ids.reset_index().to_dict("list"),
+      col_attrs=phenotype.loc[count_df.columns].reset_index().to_dict("list")
+    )
+    loom_files.append(loom_f)
+
+  # and now combine the single loom files
+  output_loom = data_output / output_file
+  lm.combine(
+    loom_files,
+    output_loom
+    # key="Gene" # dont need it as everything is aligned already. also breaks for some reason
   )
-  loom_files.append(loom_f)
-  # and remove the parquet files to save up diskspace
-  os.remove(f_path)
 
-print("Combining and writing out the raw dataset:")
-lm.combine(
-  loom_files,
-  Path(data_folder).expanduser() / "embryo_lanner_comb_raw.loom"
-  # key="Gene" # dont need it as everything is aligned already. also breaks for some reason
-)
-# now remove the intermediate loom files to save up on space :)
-for f_path in loom_files: os.remove(f_path)
+  # finally, remove the intermediary loom files
+  for f_path in loom_files: os.remove(f_path)
+
+  # and return the output file location as string
+  return str(output_loom)
+
+
+
+# %% Now start writing out the 
+
+## first load and combine the "core" set
+comb_loom_list = [
+  format_and_loom(
+    html_table.query("core_group").local_file_loc,
+    gene_ids,
+    comb_pheno,
+    "comb_core_raw.loom",
+    data_folder
+  )
+]
+
+## then lets do all the different groupings
+for ds_group in html_table.groupby("dataset_group").local_file_loc:
+  output_file_name = "comb_g" + str(ds_group[0]) + "_raw.loom"
+  comb_loom_list.append(
+    format_and_loom(ds_group[1], gene_ids, comb_pheno, output_file_name, data_folder)
+  )
+
+
+
+# %% clean up on the data isle
+# and remove the parquet files to save up diskspace
+for f_path in html_table.local_file_loc: os.remove(f_path)
+
+
 
 # %% testing grounds
 # glimpse_loom(loom_files[2])
-glimpse_loom(Path(data_folder) / "embryo_lanner_comb_raw.loom")
+glimpse_loom(data_folder / "comb_core_raw.loom")
 # import anndata as an
-# sc_dat = an.read_loom(Path(data_folder) / "embryo_lanner_comb_raw.loom")
+# sc_dat = an.read_loom(data_folder / "embryo_lanner_comb_raw.loom")
 # print(sc_dat)
-# sc_dat.write_h5ad(Path(data_folder) / "embryo_lanner_comb_raw.h5ad")
+# sc_dat.write_h5ad(data_folder / "embryo_lanner_comb_raw.h5ad")
 
 # genes_ = []
 # for f_path in loom_files:
   # # glimpse_loom(f_path)
   # with lm.connect(f_path) as loom_f:
     # print("attrs:", np.unique(loom_f.ra["Gene"], return_counts=True))
-
-
-# %%
