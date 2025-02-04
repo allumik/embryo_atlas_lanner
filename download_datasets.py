@@ -167,8 +167,12 @@ comb_cid = pd.concat([
   pd.read_parquet(row.local_file_loc)
     .columns
     .to_frame(index=False, name="cell")
-    .assign(acc_code=row["Accession number"])
-    .join(html_table.set_index("Accession number"), on="acc_code", how="left")
+    .assign(acc_code=row["Accession number"], pub_name=row["Publication"])
+    .join(
+      html_table.set_index(["Accession number", "Publication"]), 
+      on=["acc_code", "pub_name"],
+      how="left"
+    )
     for _, row in html_table.iterrows()
 ], ignore_index=True).set_index("cell").infer_objects()
 
@@ -248,7 +252,7 @@ def format_and_loom(file_list, gene_ids, phenotype, output_file, data_output=Pat
 
 
 
-# %% Now start writing out the 
+# %% Now start writing out the dataasets into loom
 
 ## first load and combine the "core" set
 comb_loom_list = [
@@ -262,6 +266,7 @@ comb_loom_list = [
 ]
 
 ## then lets do all the different groupings
+# let the errors start rolling in...
 for ds_group in html_table.groupby("dataset_group").local_file_loc:
   output_file_name = "comb_g" + str(ds_group[0]) + "_raw.loom"
   comb_loom_list.append(
@@ -280,8 +285,9 @@ for f_path in html_table.local_file_loc: os.remove(f_path)
 # glimpse_loom(loom_files[2])
 glimpse_loom(data_folder / "comb_core_raw.loom")
 # import anndata as an
-# sc_dat = an.read_loom(data_folder / "embryo_lanner_comb_raw.loom")
+# sc_dat = an.read_loom(data_folder / "comb_core_raw.loom")
 # print(sc_dat)
+# print(sc_dat.var.index)
 # sc_dat.write_h5ad(data_folder / "embryo_lanner_comb_raw.h5ad")
 
 # genes_ = []
