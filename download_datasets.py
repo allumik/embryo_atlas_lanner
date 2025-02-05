@@ -46,6 +46,37 @@ def glimpse_loom(loom_path) -> None:
     print("cols:", list(loom_f.ca))
     print("rows:", list(loom_f.ra))
 
+def filter_zero_genes(loom_file_path):
+  with lm.connect(loom_file_path, mode='r') as ds:
+    matrix = ds.layers[''].sparse().tocsr()
+    zero_gene_indices = np.where(np.diff(matrix.indptr) == 0)[0]
+
+    if len(zero_gene_indices) > 0:
+      # Invert the zero gene selection
+      genes_to_keep = np.setdiff1d(np.arange(ds.shape[0]), zero_gene_indices)
+      # Subset the Loom file
+      vw = ds.view[genes_to_keep, :]
+    else:
+      print(f"Fully populated matrix {loom_file_path}, no need to splice.")
+  # Save the view, overwriting the original file
+  lm.create(str(loom_file_path), vw.layers, vw.ra, vw.ca)
+
+# get the unique geneids from the datasets for the row attributes
+def get_unique_geneids(file_list, annotation):
+  gene_ids = np.unique(np.concatenate([
+    pd.read_parquet(f_path, columns=["Gene"]).index.to_numpy()
+      for f_path in file_list
+  ]).ravel())
+
+  # add gene annotation for the existing ids and reorder
+  # theres a mixture of id's, so merge for every id type separately
+  return pd.merge(
+    pd.DataFrame(index=pd.Index(gene_ids, name="Gene")),
+    annotation,
+    how="left", left_index=True, right_index=True
+  )
+
+
 
 
 # %% get ensemble attributes for id conversion
@@ -198,28 +229,13 @@ del comb_cid
 
 
 
-# %% get the unique geneids from the datasets for the row attributes
-gene_ids = np.unique(np.concatenate([
-  pd.read_parquet(f_path, columns=["Gene"]).index.to_numpy()
-    for f_path in html_table.local_file_loc
-]).ravel())
-
-# add gene annotation for the existing ids and reorder
-# theres a mixture of id's, so merge for every id type separately
-gene_ids = pd.merge(
-  pd.DataFrame(index=pd.Index(gene_ids, name="Gene")),
-  annot,
-  how="left", left_index=True, right_index=True
-)
-
-
-
 # %% load parquet files and add them to the loom file iteratively 
 
 # this is more memory efficient than combining parquets into a large matrix and saving it in one go
 # ... like a lot more RAM efficient
-def format_and_loom(file_list, gene_ids, phenotype, output_file, data_output=Path("./data/")) -> str:
-  loom_files=[]
+def format_and_loom(file_list:list, phenotype:pd.DataFrame, annotation:pd.DataFrame, output_file:str, data_output=Path("./data/")) -> str:
+  gene_ids = get_unique_geneids(file_list, annotation)
+  loom_files = []
   for f_path in file_list: 
     count_df = pd.read_parquet(f_path).convert_dtypes()
     loom_f = str(data_folder / (Path(f_path.stem).stem + ".loom"))
@@ -244,6 +260,9 @@ def format_and_loom(file_list, gene_ids, phenotype, output_file, data_output=Pat
     # key="Gene" # dont need it as everything is aligned already. also breaks for some reason
   )
 
+  # and then remove the 0 rows to make the dataset more compact (TODO: but what about dropouts?)
+  filter_zero_genes(output_loom)
+
   # finally, remove the intermediary loom files
   for f_path in loom_files: os.remove(f_path)
 
@@ -253,13 +272,12 @@ def format_and_loom(file_list, gene_ids, phenotype, output_file, data_output=Pat
 
 
 # %% Now start writing out the dataasets into loom
-
 ## first load and combine the "core" set
 comb_loom_list = [
   format_and_loom(
     html_table.query("core_group").local_file_loc,
-    gene_ids,
     comb_pheno,
+    annot,
     "comb_core_raw.loom",
     data_folder
   )
@@ -270,7 +288,7 @@ comb_loom_list = [
 for ds_group in html_table.groupby("dataset_group").local_file_loc:
   output_file_name = "comb_g" + str(ds_group[0]) + "_raw.loom"
   comb_loom_list.append(
-    format_and_loom(ds_group[1], gene_ids, comb_pheno, output_file_name, data_folder)
+    format_and_loom(ds_group[1], comb_pheno, annot, output_file_name, data_folder)
   )
 
 
@@ -284,6 +302,7 @@ for f_path in html_table.local_file_loc: os.remove(f_path)
 # %% testing grounds
 # glimpse_loom(loom_files[2])
 glimpse_loom(data_folder / "comb_core_raw.loom")
+glimpse_loom(data_folder / "comb_g1_raw.loom")
 # import anndata as an
 # sc_dat = an.read_loom(data_folder / "comb_core_raw.loom")
 # print(sc_dat)
@@ -295,3 +314,5 @@ glimpse_loom(data_folder / "comb_core_raw.loom")
   # # glimpse_loom(f_path)
   # with lm.connect(f_path) as loom_f:
     # print("attrs:", np.unique(loom_f.ra["Gene"], return_counts=True))
+
+# %%
