@@ -340,7 +340,8 @@ for f_path in html_table.local_file_loc: os.remove(f_path)
 
 # %% testing grounds
 # glimpse_loom(data_folder / "comb_core_raw.loom")
-# glimpse_loom(data_folder / "comb_g1_raw.loom")
+# for i in range(1, 6):
+#   glimpse_loom(data_folder / f"comb_g{i}_raw.loom")
 # import anndata as an
 # sc_dat = an.read_loom(data_folder / "comb_core_raw.loom")
 # print(sc_dat)
