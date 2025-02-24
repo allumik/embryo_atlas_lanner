@@ -119,7 +119,7 @@ def format_and_loom(
   loom_files = []
   for f_path in file_list: 
     count_df = pd.read_parquet(f_path).convert_dtypes()
-    loom_f = str(data_folder / (Path(f_path.stem).stem + ".loom"))
+    loom_f = str(data_output / (Path(f_path.stem).stem + ".loom"))
     lm.create(
       filename=loom_f,
       layers=(
@@ -145,7 +145,7 @@ def format_and_loom(
   filter_zero_genes(output_loom)
 
   # finally, remove the intermediary loom files
-  for f_path in loom_files: os.remove(f_path)
+  for loom_path in loom_files: os.remove(loom_path)
 
   # and return the output file location as string
   return str(output_loom)
@@ -257,6 +257,7 @@ with Pool(processes=4) as pool:
 html_table["local_file_loc"] = file_list # assume the dl order was the same
 
 
+
 # %% Now add the modified suppl. table 9 from the article
 # first read it in
 suppl_datasets = pd.read_csv(data_folder / "41592_2024_2493_MOESM11_ESM_modified.csv")
@@ -344,6 +345,8 @@ for f_path in html_table.local_file_loc: os.remove(f_path)
 #   glimpse_loom(data_folder / f"comb_g{i}_raw.loom")
 # import anndata as an
 # sc_dat = an.read_loom(data_folder / "comb_core_raw.loom")
+# sc_dat[:100,:100].X.toarray()
 # print(sc_dat)
 # print(sc_dat.var.index)
-# sc_dat.write_h5ad(data_folder / "embryo_lanner_comb_raw.h5ad")
+# sc_dat.write_h5ad(data_folder / "comb_core_raw.h5ad")
+# %%
