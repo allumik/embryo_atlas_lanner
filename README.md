@@ -8,7 +8,7 @@
 
 ## Output
 
-The output will be in the data directory, formatted as `loom` files for better compatibility between Seurat and Scanpy. The groups follow the Zhang et al. 2024 description of the datasets and how they are grouped. The main output dataset is the `comb_core_raw.loom` - a compilation of the 6 datasets they used for integration in their study.
+The output will be in the data directory, formatted as `loom` files for better compatibility between Seurat and Scanpy. The groups follow the Zhao et al. 2025 description of the datasets and how they are grouped. The main output dataset is the `comb_core_raw.loom` - a compilation of the 6 datasets they used for integration in their study.
 
 # Citation
 
